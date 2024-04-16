@@ -1,8 +1,50 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <string.h>
 
 //Board in Memory
+
+#define WHITE 1
+#define BLACK 0
+
+#define INDEX char
+#define PIECE char
+#define XINDEX char
+#define YINDEX char
+#define BOOL char
+
+#define DEBUG 0
+
+#if DEBUG
+  #define PRINT(s, ...) printf(s,##__VA_ARGS__)
+#else
+  #define PRINT(s, ...) (void)0
+#endif
+
+#define DEBUG2 0
+
+#if DEBUG2
+  #define PRINT2(s, ...) printf(s,##__VA_ARGS__)
+#else
+  #define PRINT2(s, ...) (void)0
+#endif
+
+#define DEBUGR 0
+
+#if DEBUGR
+  #define PRINTR(s, ...) printf(s,##__VA_ARGS__)
+#else
+  #define PRINTR(s, ...) (void)0
+#endif
+
+#define DEBUGK 1
+
+#if DEBUGK
+  #define PRINTK(s, ...) printf(s,##__VA_ARGS__)
+#else
+  #define PRINTK(s, ...) (void)0
+#endif
 
 struct board {
   char *pieces;
@@ -10,8 +52,7 @@ struct board {
   char lastPawn;
   char kingW;
   char kingB;
-  //Castle Booleans
-  char WL,WR,BL,BR;
+  char WL,WR,BL,BR;//Castle Booleans
   char drawCount;
 };
 
@@ -27,11 +68,12 @@ char i(char x,char y) {
   if(x<0 || x>7 || y<0 || y>7) {
     return -1;
   }
+  PRINT2("\nIndex in Bounds\n");
   return x + 8*(7 - y);
 }
 
 struct board *newBoard() {
-  struct board *b = malloc(sizeof(struct board));
+  struct board *b = (struct board *)malloc(sizeof(struct board));
   (*b).turn = 1;
   (*b).lastPawn = -1;
   (*b).WL = (*b).WR = (*b).BL = (*b).BR = 1;
@@ -94,12 +136,22 @@ void printBoard(struct board *b) {
   printf("    a   b   c   d   e   f   g   h\n");
 }
 
-//Game Logic
+void printBoardDebug(struct board *b,FILE *fptr) {
+  fprintf(fptr,"\n  ---------------------------------\n");
+  char j, p;
+  for(j=0; j<64; j++) {
+    if(j%8==0) {
+      fprintf(fptr,"%d |",8-j/8);
+    }
+    fprintf(fptr," %c |",(*b).pieces[j]);
+    if (j%8==7) {
+      fprintf(fptr,"\n  ---------------------------------\n");
+    }
+  }
+  fprintf(fptr,"    a   b   c   d   e   f   g   h\n");
+}
 
-struct moveSet {
-  int moveCount;
-  struct board *moves;
-};
+//Game Logic
 
 char color(char p) {
   return p=='P' || p=='R' || p=='N' || p=='B' || p=='Q' || p=='K';
@@ -113,12 +165,8 @@ char isFile(char c) {
   return c=='a' || c=='b' || c=='c' || c=='d' || c=='e' || c=='f' || c=='g' || c=='h';
 }
 
-void relu(float *x) {
-  if((*x)<0) {
-    *x = 0;
-  }
-}
 
+//Returns 0 if the i return fed in was -1, else the piece at the index on the pointed board.
 char getPiece(struct board *b,char j) {
   if(j==-1) return 0;
   return (*b).pieces[j];
@@ -281,7 +329,7 @@ char checkCheck(struct board *b) {
 }
 
 char getPromotion(char c) {
-  printf("Please input your desired promotion (N,B,R,Q)\n");
+  printf("\nPlease input your desired promotion (N,B,R,Q)\n");
   char input[2];
   scanf("%s",input);
   if((input[0]=='Q' || input[0]=='N' || input[0]=='R' || input[0]=='B') && input[1]==0) {
@@ -309,8 +357,20 @@ char humanMove(struct board * b) {
     char destination = i(destinationX,destinationY);
     char destinationSpace = (*b).pieces[destination];
     //printf("\n%d %d %d %c %d %d %d %c\n",originX,originY,origin,currentPiece,destinationX,destinationY,destination,destination);
-    if((*b).pieces[origin]==' ' || color(currentPiece)!=(*b).turn || origin == destination || (destinationSpace!=' ' && color(currentPiece)==color(destinationSpace))) {
-      printf("\nInvalid move.1\n");
+    if((*b).pieces[origin]==' ') {
+      printf("\nInvalid move.1.1\n");
+      return humanMove(b);
+    }
+    if(color(currentPiece)!=(*b).turn) {
+      printf("\nInvalid move.1.2\n");
+      return humanMove(b);
+    }
+    if(origin == destination) {
+      printf("\nInvalid move.1.3\n");
+      return humanMove(b);
+    }
+    if(destinationSpace!=' ' && color(currentPiece)==color(destinationSpace)) {
+      printf("\nInvalid move.1.4\n");
       return humanMove(b);
     }
     if(currentPiece=='P') {
@@ -1147,15 +1207,786 @@ char humanMove(struct board * b) {
   }
 }
 
+//Artificial Intelligence
+
+float knights[16] = {250,300,350,400,
+                     200,250,300,350,
+                     150,200,250,300,
+                     100,150,200,250};
+
+float bishops[16] = {270,320,370,420,
+                     220,270,320,370,
+                     170,220,270,320,
+                     120,170,220,270};
+
+float rooks[16] = {550,600,650,700,
+                   500,550,600,650,
+                   450,500,550,600,
+                   400,450,500,550};
+
+float queens[16] = {850, 900, 950, 1000,
+                    800, 850, 900, 950,
+                    750, 800, 850, 900,
+                    700, 750, 800, 850};
+
+float kings[16] = {10, 10, 10, 10,
+                   30, 30, 30, 30,
+                   110,110,80, 30,
+                   110,110,100,80};
+
+float kingE[16] ={60, 80, 100,120,
+                  40, 60, 80, 100,
+                  20, 40, 60, 80,
+                  0,  20, 40, 60};
+
+float pawns[6] = {100,125,150,200,250,400};
+
+float value[5] = {1,3,3,5,9};
+
+INDEX table(INDEX j) {
+  XINDEX xCurrent;
+  YINDEX yCurrent;
+  xCurrent = x(j);
+  yCurrent = y(j);
+  if(yCurrent <= 3) yCurrent = 3-yCurrent;
+  else yCurrent = yCurrent-4;
+  if(xCurrent > 3) xCurrent = 7-xCurrent;
+  return 4*yCurrent+xCurrent;
+}
+
+void ReLU(float *x) {
+  if((*x)<0) {
+    *x = 0;
+  }
+}
+
+struct score {
+  float MW, TW, MB, TB, Total;//Material and Tactical scores for White and Black
+};
+
+struct score newScore(float nMW, float nTW, float nMB,float nTB) {
+  struct score s;
+  s.MW = nMW;
+  s.TW = nTW;
+  s.MB = nMB;
+  s.TB = nTB;
+  return s;
+}
+
+struct node {
+  struct score eval;
+  int moveCount, movesPlayed;
+  struct board *current;
+  struct node *previous, *moves, *next;
+};
+
+struct node *newNode() {
+  struct node *new = (struct node*)malloc(sizeof(struct node));
+  (*new).eval = newScore(0,0,0,0);
+  (*new).moveCount = -1;
+  (*new).movesPlayed = 0;
+  (*new).current = newBoard();
+  (*new).previous = (*new).moves = (*new).next = NULL;
+  return new;
+}
+
+struct node *nextNodeBase(struct node *n) {
+  struct node *new = (struct node *)malloc(sizeof(struct node));
+  (*new).eval = n->eval;
+  (*new).moveCount = -1;
+  (*new).movesPlayed = (*n).movesPlayed + 1;
+  (*new).current = (struct board*)memcpy(malloc(sizeof(struct board)),(*n).current,sizeof(struct board));
+  new->current->pieces = (char*)memcpy(malloc(64*sizeof(char)),n->current->pieces,64*sizeof(char));
+  (*(*new).current).turn = !(*(*new).current).turn;
+  return new;
+}
+
+void analysis(struct node *n) {
+  INDEX j;
+  for(j=0; j<64; j++) {
+    switch((*(*n).current).pieces[j]) {
+      case 'p':
+        (*n).eval.MB += pawns[6-y(j)];
+        break;
+      case 'P':
+        (*n).eval.MW += pawns[y(j)-1];
+        break;
+      case 'n':
+        (*n).eval.MB += knights[table(j)];
+        break;
+      case 'N':
+        (*n).eval.MW += knights[table(j)];
+        break;
+      case 'b':
+        (*n).eval.MB += bishops[table(j)];
+        break;
+      case 'B':
+        (*n).eval.MW += bishops[table(j)];
+        break;
+      case 'r':
+        (*n).eval.MB += rooks[table(j)];
+        break;
+      case 'R':
+        (*n).eval.MW += rooks[table(j)];
+        break;
+      case 'q':
+        (*n).eval.MB += queens[table(j)];
+        break;
+      case 'Q':
+        (*n).eval.MW += queens[table(j)];
+        break;
+      case 'k':
+        (*n).eval.MB += kings[table(j)];
+        break;
+      case 'K':
+        (*n).eval.MW += kings[table(j)];
+        break;
+      case ' ':
+        break;
+      default:
+        printf("analysis Error");
+        exit(1);
+    }
+
+  }
+}
+
+BOOL isWhite(PIECE piece) {
+  return piece == 'P' || piece == 'N' || piece == 'B' || piece == 'R' || piece == 'Q' || piece == 'K';
+}
+
+BOOL isBlack(PIECE piece) {
+  return piece == 'p' || piece == 'n' || piece == 'b' || piece == 'r' || piece == 'q' || piece == 'k';
+}
+
+int comparator(const void* a,const void* b) {
+  struct node *a2, *b2;
+  a2 = (struct node *)a;
+  b2 = (struct node *)b;
+  float aAnalysis, bAnalysis;
+  aAnalysis = (*a2).eval.MW + (*a2).eval.TW - (*a2).eval.MB - (*a2).eval.TB;
+  bAnalysis = (*b2).eval.MW + (*b2).eval.TW - (*b2).eval.MB - (*b2).eval.TB;
+  if(aAnalysis > bAnalysis) {
+    return 1;
+  } else if(aAnalysis == bAnalysis) {
+    return 0;
+  } else {
+    return -1;
+  }
+}
+
+void deepCopyNode(struct node *dest, struct node *copy) {
+  memcpy((void *)dest,(void *)copy,sizeof(struct node));
+  dest->current = (struct board*)memcpy(malloc(sizeof(struct board)),(void *)copy->current,sizeof(struct board));
+  dest->current->pieces = (char*)memcpy(malloc(64*sizeof(char)),(void *)copy->current->pieces,64*sizeof(char));
+}
+
+XINDEX knightMovesX[8] = {2,1,-1,-2,-2,-1,1,2};
+YINDEX knightMovesY[8] = {1,2,2,1,-1,-2,-2,-1};
+
+XINDEX kingMovesX[8] = {1,1,0,-1,-1,-1,0,1};
+YINDEX kingMovesY[8] = {0,1,1,1,0,-1,-1,-1};
+
+//Lists game states after legal moves at the moves pointer within n.
+void generateMoves(struct node *n) {
+  INDEX j;
+  (*n).moveCount = 0;
+  (*n).moves = (struct node *)malloc(100*sizeof(struct node));
+  struct node *base = nextNodeBase(n);
+  int moveIndex = 0;
+  int currentAlloc = 100;
+  struct node *end = n->moves + moveIndex + currentAlloc;
+
+  XINDEX X;
+  YINDEX Y;
+  XINDEX X2;
+  YINDEX Y2;
+  INDEX j2;
+  PIECE dest;
+  PRINT("\n1\n");
+  for(j=0; j<64; j++) {
+    X = x(j);
+    Y = y(j);
+    PRINT("\n2\n");
+    switch((*(*n).current).pieces[j]) {
+      case 'p':
+        PRINT("\n3\n");
+        if((*(*n).current).pieces[i(X,Y-1)] == ' ') {
+          PRINT("\na\n");
+          deepCopyNode(n->moves + moveIndex,base);
+          PRINT("\nb %c %c\n",(*(*((*n).moves + moveIndex)).current).pieces[j],(*(*((*n).moves + moveIndex)).current).pieces[i(X,Y-1)]);
+          n->moves[moveIndex].current->pieces[j] = ' ';
+          PRINT("test2");
+          n->moves[moveIndex].current->pieces[i(X,Y-1)] = 'p';
+          PRINT("\nc\n");
+          n->moves[moveIndex].current->lastPawn = -1;
+          n->moves[moveIndex].current->drawCount = 0;
+          moveIndex++;
+          n->moveCount++;
+          PRINT("\n4\n");
+          if(moveIndex == currentAlloc) {
+            currentAlloc += 100;
+            (*n).moves = (struct node *)realloc((void*)(*n).moves,currentAlloc*sizeof(struct node));
+            end += 100;
+          }
+          PRINT("\n5\n");
+          if(getPiece((*n).current,i(X,Y-2)) == ' ' && Y==6) {
+            deepCopyNode(n->moves + moveIndex,base);
+            PRINT(" 5.1 ");
+            n->moves[moveIndex].current->pieces[j] = ' ';
+            n->moves[moveIndex].current->pieces[i(X,Y-2)] = 'p';
+            n->moves[moveIndex].current->lastPawn = X;
+            n->moves[moveIndex].current->drawCount = 0;
+            PRINT(" 5.2 ");
+            moveIndex++;
+            n->moveCount++;
+            if(moveIndex == currentAlloc) {
+              currentAlloc += 100;
+              (*n).moves = (struct node *)realloc((void*)(*n).moves,currentAlloc*sizeof(struct node));
+              end += 100;
+            }
+          }
+          PRINT("\n6\n");
+        }
+        if(isWhite(getPiece((*n).current,i(X+1,Y-1)))) {
+          deepCopyNode(n->moves + moveIndex,base);
+          n->moves[moveIndex].current->pieces[j] = ' ';
+          n->moves[moveIndex].current->pieces[i(X+1,Y-1)] = 'p';
+          n->moves[moveIndex].current->lastPawn = -1;
+          n->moves[moveIndex].current->drawCount = 0;
+          moveIndex++;
+          n->moveCount++;
+          if(moveIndex == currentAlloc) {
+            currentAlloc += 100;
+            (*n).moves = (struct node *)realloc((void*)(*n).moves,currentAlloc*sizeof(struct node));
+            end += 100;
+          }
+        }
+        if(isWhite(getPiece((*n).current,i(X-1,Y-1)))) {
+          deepCopyNode(n->moves + moveIndex,base);
+          n->moves[moveIndex].current->pieces[j] = ' ';
+          n->moves[moveIndex].current->pieces[i(X-1,Y-1)] = 'p';
+          n->moves[moveIndex].current->lastPawn = -1;
+          n->moves[moveIndex].current->drawCount = 0;
+          moveIndex++;
+          (*n).moveCount++;
+          if(moveIndex == currentAlloc) {
+            currentAlloc += 100;
+            (*n).moves = (struct node *)realloc((void*)(*n).moves,currentAlloc*sizeof(struct node));
+            end += 100;
+          }
+        }
+        if(n->current->lastPawn-X == 1 && Y==3) {
+          deepCopyNode(n->moves + moveIndex,base);
+          n->moves[moveIndex].current->pieces[j] = ' ';
+          n->moves[moveIndex].current->pieces[i(n->current->lastPawn,2)] = 'p';
+          n->moves[moveIndex].current->pieces[i(n->current->lastPawn,3)] = ' ';
+          n->moves[moveIndex].current->lastPawn = -1;
+          n->moves[moveIndex].current->drawCount = 0;
+          moveIndex++;
+          (*n).moveCount++;
+          if(moveIndex == currentAlloc) {
+            currentAlloc += 100;
+            (*n).moves = (struct node *)realloc((void*)(*n).moves,currentAlloc*sizeof(struct node));
+            end += 100;
+          }
+        }
+        if(X-n->current->lastPawn == 1 && Y==3) {
+          deepCopyNode(n->moves + moveIndex,base);
+          n->moves[moveIndex].current->pieces[j] = ' ';
+          n->moves[moveIndex].current->pieces[i(n->current->lastPawn,2)] = 'p';
+          n->moves[moveIndex].current->pieces[i(n->current->lastPawn,3)] = ' ';
+          n->moves[moveIndex].current->lastPawn = -1;
+          n->moves[moveIndex].current->drawCount = 0;
+          moveIndex++;
+          (*n).moveCount++;
+          if(moveIndex == currentAlloc) {
+            currentAlloc += 100;
+            (*n).moves = (struct node *)realloc((void*)(*n).moves,currentAlloc*sizeof(struct node));
+            end += 100;
+          }
+        }
+        break;
+      case 'n':
+      PRINT2("\nn\n");
+        for(j2=0; j2<8; j2++) {
+          PRINT2("\n1 j2 = %d\n",j2);
+          dest = getPiece(n->current,i(X+knightMovesX[j2],Y+knightMovesY[j2]));
+          if(dest == ' ' || isWhite(dest)) {
+            PRINT2("\n2\n");
+            deepCopyNode(n->moves + moveIndex,base);
+            n->moves[moveIndex].current->pieces[j] = ' ';
+            n->moves[moveIndex].current->pieces[i(X+knightMovesX[j2],Y+knightMovesY[j2])] = 'n';
+            n->moves[moveIndex].current->lastPawn = -1;
+            PRINT2("\n3\n");
+            if(dest == ' ') {
+              PRINT2("\n4a\n");
+              n->moves[moveIndex].current->drawCount++;
+            } else {
+              PRINT2("\n4b\n");
+              n->moves[moveIndex].current->drawCount = 0;
+            }
+            moveIndex++;
+            (*n).moveCount++;
+            PRINT2("\n5\n");
+            if(moveIndex == currentAlloc) {
+              currentAlloc += 100;
+              (*n).moves = (struct node *)realloc((void*)(*n).moves,currentAlloc*sizeof(struct node));
+              end += 100;
+            }
+            PRINT2("\n6\n");
+          }
+        }
+        break;
+      case 'b':
+      PRINT2("\nb\n");
+        X2 = X+1;
+        Y2 = Y+1;
+        while(i(X2,Y2)!=-1) {
+          dest = getPiece(n->current,i(X2,Y2));
+          if(isBlack(dest)) break;
+          deepCopyNode(n->moves + moveIndex,base);
+          n->moves[moveIndex].current->pieces[i(X,Y)] = ' ';
+          n->moves[moveIndex].current->pieces[i(X2,Y2)] = 'b';
+          n->moves[moveIndex].current->lastPawn = -1;
+          if(dest == ' ')
+            n->moves[moveIndex].current->drawCount++;
+          else {
+            n->moves[moveIndex].current->drawCount = 0;
+          }
+          moveIndex++;
+          (*n).moveCount++;
+          if(moveIndex == currentAlloc) {
+              currentAlloc += 100;
+              (*n).moves = (struct node *)realloc((void*)(*n).moves,currentAlloc*sizeof(struct node));
+              end += 100;
+          }
+          if(dest != ' ') break;
+          X2++;
+          Y2++;
+        }
+        X2 = X-1;
+        Y2 = Y+1;
+        while(i(X2,Y2)!=-1) {
+          dest = getPiece(n->current,i(X2,Y2));
+          if(isBlack(dest)) break;
+          deepCopyNode(n->moves + moveIndex,base);
+          n->moves[moveIndex].current->pieces[i(X,Y)] = ' ';
+          n->moves[moveIndex].current->pieces[i(X2,Y2)] = 'b';
+          n->moves[moveIndex].current->lastPawn = -1;
+          if(dest == ' ')
+            n->moves[moveIndex].current->drawCount++;
+          else {
+            n->moves[moveIndex].current->drawCount = 0;
+          }
+          moveIndex++;
+          (*n).moveCount++;
+          if(moveIndex == currentAlloc) {
+              currentAlloc += 100;
+              (*n).moves = (struct node *)realloc((void*)(*n).moves,currentAlloc*sizeof(struct node));
+              end += 100;
+          }
+          if(dest != ' ') break;
+            X2--;
+            Y2++;
+        }
+        X2 = X-1;
+        Y2 = Y-1;
+        while(i(X2,Y2)!=-1) {
+          dest = getPiece(n->current,i(X2,Y2));
+          if(isBlack(dest)) break;
+          deepCopyNode(n->moves + moveIndex,base);
+          n->moves[moveIndex].current->pieces[i(X,Y)] = ' ';
+          n->moves[moveIndex].current->pieces[i(X2,Y2)] = 'b';
+          n->moves[moveIndex].current->lastPawn = -1;
+          if(dest == ' ')
+            n->moves[moveIndex].current->drawCount++;
+          else {
+            n->moves[moveIndex].current->drawCount = 0;
+          }
+          moveIndex++;
+          (*n).moveCount++;
+          if(moveIndex == currentAlloc) {
+              currentAlloc += 100;
+              (*n).moves = (struct node *)realloc((void*)(*n).moves,currentAlloc*sizeof(struct node));
+              end += 100;
+          }
+          if(dest != ' ') break;
+            X2--;
+            Y2--;
+        }
+        X2 = X+1;
+        Y2 = Y-1;
+        while(i(X2,Y2)!=-1) {
+          dest = getPiece(n->current,i(X2,Y2));
+          if(isBlack(dest)) break;
+          deepCopyNode(n->moves + moveIndex,base);
+          n->moves[moveIndex].current->pieces[i(X,Y)] = ' ';
+          n->moves[moveIndex].current->pieces[i(X2,Y2)] = 'b';
+          n->moves[moveIndex].current->lastPawn = -1;
+          if(dest == ' ')
+            n->moves[moveIndex].current->drawCount++;
+          else {
+            n->moves[moveIndex].current->drawCount = 0;
+          }
+          moveIndex++;
+          (*n).moveCount++;
+          if(moveIndex == currentAlloc) {
+              currentAlloc += 100;
+              (*n).moves = (struct node *)realloc((void*)(*n).moves,currentAlloc*sizeof(struct node));
+              end += 100;
+          }
+          if(dest != ' ') break;
+            X2++;
+            Y2--;
+        }
+        break;
+      case 'r':
+        PRINTR("\nPreL\n");
+        for(j2 = X+1;i(j2,Y)!=-1;j2++) {
+          dest = getPiece(n->current,i(j2,Y));
+          if(isBlack(dest)) break;
+          deepCopyNode(n->moves + moveIndex,base);
+          n->moves[moveIndex].current->pieces[i(X,Y)] = ' ';
+          n->moves[moveIndex].current->pieces[i(j2,Y)] = 'r';
+          n->moves[moveIndex].current->lastPawn = -1;
+          if(dest == ' ')
+            n->moves[moveIndex].current->drawCount++;
+          else {
+            n->moves[moveIndex].current->drawCount = 0;
+          }
+          moveIndex++;
+          (*n).moveCount++;
+          if(n->moves[moveIndex].current->BL && X==0) n->moves[moveIndex].current->BL = 0;
+          if(n->moves[moveIndex].current->BR && X==7) n->moves[moveIndex].current->BR = 0;
+          if(moveIndex == currentAlloc) {
+              currentAlloc += 100;
+              (*n).moves = (struct node *)realloc((void*)(*n).moves,currentAlloc*sizeof(struct node));
+              end += 100;
+          }
+          if(dest != ' ') break;
+        }
+        PRINTR("\n1L\n");
+        for(j2 = Y+1;i(X,j2)!=-1;j2++) {
+          dest = getPiece(n->current,i(X,j2));
+          if(isBlack(dest)) break;
+          deepCopyNode(n->moves + moveIndex,base);
+          n->moves[moveIndex].current->pieces[i(X,Y)] = ' ';
+          n->moves[moveIndex].current->pieces[i(X,j2)] = 'r';
+          n->moves[moveIndex].current->lastPawn = -1;
+          if(dest == ' ')
+            n->moves[moveIndex].current->drawCount++;
+          else {
+            n->moves[moveIndex].current->drawCount = 0;
+          }
+          moveIndex++;
+          (*n).moveCount++;
+          if(n->moves[moveIndex].current->BL && X==0) n->moves[moveIndex].current->BL = 0;
+          if(n->moves[moveIndex].current->BR && X==7) n->moves[moveIndex].current->BR = 0;
+          if(moveIndex == currentAlloc) {
+              currentAlloc += 100;
+              (*n).moves = (struct node *)realloc((void*)(*n).moves,currentAlloc*sizeof(struct node));
+              end += 100;
+          }
+          if(dest != ' ') break;
+        }
+        PRINTR("\n2L\n");
+        for(j2 = X-1;i(j2,Y)!=-1;j2--) {
+          dest = getPiece(n->current,i(j2,Y));
+          if(isBlack(dest)) break;
+          PRINTR("\n0\n");
+          deepCopyNode(n->moves + moveIndex,base);
+          n->moves[moveIndex].current->pieces[i(X,Y)] = ' ';
+          n->moves[moveIndex].current->pieces[i(j2,Y)] = 'r';
+          n->moves[moveIndex].current->lastPawn = -1;
+          PRINTR("\n1\n");
+          if(dest == ' ')
+            n->moves[moveIndex].current->drawCount++;
+          else {
+            n->moves[moveIndex].current->drawCount = 0;
+          }
+          moveIndex++;
+          (*n).moveCount++;
+          if(n->moves[moveIndex].current->BL && X==0) n->moves[moveIndex].current->BL = 0;
+          if(n->moves[moveIndex].current->BR && X==7) n->moves[moveIndex].current->BR = 0;
+          if(moveIndex == currentAlloc) {
+              currentAlloc += 100;
+              (*n).moves = (struct node *)realloc((void*)(*n).moves,currentAlloc*sizeof(struct node));
+              end += 100;
+          }
+          if(dest != ' ') break;
+        }
+        PRINTR("\n3L\n");
+        for(j2 = Y-1;i(X,j2)!=-1;j2--) {
+          dest = getPiece(n->current,i(X,j2));
+          if(isBlack(dest)) break;
+          deepCopyNode(n->moves + moveIndex,base);
+          n->moves[moveIndex].current->pieces[i(X,Y)] = ' ';
+          n->moves[moveIndex].current->pieces[i(X,j2)] = 'r';
+          n->moves[moveIndex].current->lastPawn = -1;
+          if(dest == ' ')
+            n->moves[moveIndex].current->drawCount++;
+          else {
+            n->moves[moveIndex].current->drawCount = 0;
+          }
+          moveIndex++;
+          (*n).moveCount++;
+          if(n->moves[moveIndex].current->BL && X==0) n->moves[moveIndex].current->BL = 0;
+          if(n->moves[moveIndex].current->BR && X==7) n->moves[moveIndex].current->BR = 0;
+          if(moveIndex == currentAlloc) {
+              currentAlloc += 100;
+              (*n).moves = (struct node *)realloc((void*)(*n).moves,currentAlloc*sizeof(struct node));
+              end += 100;
+          }
+          if(dest != ' ') break;
+        }
+        PRINTR("\n4L\n");
+        break;
+      case 'q':
+        PRINT2("\nb\n");
+        X2 = X+1;
+        Y2 = Y+1;
+        while(i(X2,Y2)!=-1) {
+          dest = getPiece(n->current,i(X2,Y2));
+          if(isBlack(dest)) break;
+          deepCopyNode(n->moves + moveIndex,base);
+          n->moves[moveIndex].current->pieces[i(X,Y)] = ' ';
+          n->moves[moveIndex].current->pieces[i(X2,Y2)] = 'q';
+          n->moves[moveIndex].current->lastPawn = -1;
+          if(dest == ' ')
+            n->moves[moveIndex].current->drawCount++;
+          else {
+            n->moves[moveIndex].current->drawCount = 0;
+          }
+          moveIndex++;
+          (*n).moveCount++;
+          if(moveIndex == currentAlloc) {
+              currentAlloc += 100;
+              (*n).moves = (struct node *)realloc((void*)(*n).moves,currentAlloc*sizeof(struct node));
+              end += 100;
+          }
+          if(dest != ' ') break;
+          X2++;
+          Y2++;
+        }
+        X2 = X-1;
+        Y2 = Y+1;
+        while(i(X2,Y2)!=-1) {
+          dest = getPiece(n->current,i(X2,Y2));
+          if(isBlack(dest)) break;
+          deepCopyNode(n->moves + moveIndex,base);
+          n->moves[moveIndex].current->pieces[i(X,Y)] = ' ';
+          n->moves[moveIndex].current->pieces[i(X2,Y2)] = 'q';
+          n->moves[moveIndex].current->lastPawn = -1;
+          if(dest == ' ')
+            n->moves[moveIndex].current->drawCount++;
+          else {
+            n->moves[moveIndex].current->drawCount = 0;
+          }
+          moveIndex++;
+          (*n).moveCount++;
+          if(moveIndex == currentAlloc) {
+              currentAlloc += 100;
+              (*n).moves = (struct node *)realloc((void*)(*n).moves,currentAlloc*sizeof(struct node));
+              end += 100;
+          }
+          if(dest != ' ') break;
+            X2--;
+            Y2++;
+        }
+        X2 = X-1;
+        Y2 = Y-1;
+        while(i(X2,Y2)!=-1) {
+          dest = getPiece(n->current,i(X2,Y2));
+          if(isBlack(dest)) break;
+          deepCopyNode(n->moves + moveIndex,base);
+          n->moves[moveIndex].current->pieces[i(X,Y)] = ' ';
+          n->moves[moveIndex].current->pieces[i(X2,Y2)] = 'q';
+          n->moves[moveIndex].current->lastPawn = -1;
+          if(dest == ' ')
+            n->moves[moveIndex].current->drawCount++;
+          else {
+            n->moves[moveIndex].current->drawCount = 0;
+          }
+          moveIndex++;
+          (*n).moveCount++;
+          if(moveIndex == currentAlloc) {
+              currentAlloc += 100;
+              (*n).moves = (struct node *)realloc((void*)(*n).moves,currentAlloc*sizeof(struct node));
+              end += 100;
+          }
+          if(dest != ' ') break;
+            X2--;
+            Y2--;
+        }
+        X2 = X+1;
+        Y2 = Y-1;
+        while(i(X2,Y2)!=-1) {
+          dest = getPiece(n->current,i(X2,Y2));
+          if(isBlack(dest)) break;
+          deepCopyNode(n->moves + moveIndex,base);
+          n->moves[moveIndex].current->pieces[i(X,Y)] = ' ';
+          n->moves[moveIndex].current->pieces[i(X2,Y2)] = 'q';
+          n->moves[moveIndex].current->lastPawn = -1;
+          if(dest == ' ')
+            n->moves[moveIndex].current->drawCount++;
+          else {
+            n->moves[moveIndex].current->drawCount = 0;
+          }
+          moveIndex++;
+          (*n).moveCount++;
+          if(moveIndex == currentAlloc) {
+              currentAlloc += 100;
+              (*n).moves = (struct node *)realloc((void*)(*n).moves,currentAlloc*sizeof(struct node));
+              end += 100;
+          }
+          if(dest != ' ') break;
+            X2++;
+            Y2--;
+        }
+        PRINTR("\nPreL\n");
+        for(j2 = X+1;i(j2,Y)!=-1;j2++) {
+          dest = getPiece(n->current,i(j2,Y));
+          if(isBlack(dest)) break;
+          deepCopyNode(n->moves + moveIndex,base);
+          n->moves[moveIndex].current->pieces[i(X,Y)] = ' ';
+          n->moves[moveIndex].current->pieces[i(j2,Y)] = 'q';
+          n->moves[moveIndex].current->lastPawn = -1;
+          if(dest == ' ')
+            n->moves[moveIndex].current->drawCount++;
+          else {
+            n->moves[moveIndex].current->drawCount = 0;
+          }
+          moveIndex++;
+          (*n).moveCount++;
+          if(moveIndex == currentAlloc) {
+              currentAlloc += 100;
+              (*n).moves = (struct node *)realloc((void*)(*n).moves,currentAlloc*sizeof(struct node));
+              end += 100;
+          }
+          if(dest != ' ') break;
+        }
+        PRINTR("\n1L\n");
+        for(j2 = Y+1;i(X,j2)!=-1;j2++) {
+          dest = getPiece(n->current,i(X,j2));
+          if(isBlack(dest)) break;
+          deepCopyNode(n->moves + moveIndex,base);
+          n->moves[moveIndex].current->pieces[i(X,Y)] = ' ';
+          n->moves[moveIndex].current->pieces[i(X,j2)] = 'q';
+          n->moves[moveIndex].current->lastPawn = -1;
+          if(dest == ' ')
+            n->moves[moveIndex].current->drawCount++;
+          else {
+            n->moves[moveIndex].current->drawCount = 0;
+          }
+          moveIndex++;
+          (*n).moveCount++;
+          if(moveIndex == currentAlloc) {
+              currentAlloc += 100;
+              (*n).moves = (struct node *)realloc((void*)(*n).moves,currentAlloc*sizeof(struct node));
+              end += 100;
+          }
+          if(dest != ' ') break;
+        }
+        PRINTR("\n2L\n");
+        for(j2 = X-1;i(j2,Y)!=-1;j2--) {
+          dest = getPiece(n->current,i(j2,Y));
+          if(isBlack(dest)) break;
+          PRINTR("\n0\n");
+          deepCopyNode(n->moves + moveIndex,base);
+          n->moves[moveIndex].current->pieces[i(X,Y)] = ' ';
+          n->moves[moveIndex].current->pieces[i(j2,Y)] = 'q';
+          n->moves[moveIndex].current->lastPawn = -1;
+          PRINTR("\n1\n");
+          if(dest == ' ')
+            n->moves[moveIndex].current->drawCount++;
+          else {
+            n->moves[moveIndex].current->drawCount = 0;
+          }
+          moveIndex++;
+          (*n).moveCount++;
+          if(moveIndex == currentAlloc) {
+              currentAlloc += 100;
+              (*n).moves = (struct node *)realloc((void*)(*n).moves,currentAlloc*sizeof(struct node));
+              end += 100;
+          }
+          if(dest != ' ') break;
+        }
+        PRINTR("\n3L\n");
+        for(j2 = Y-1;i(X,j2)!=-1;j2--) {
+          dest = getPiece(n->current,i(X,j2));
+          if(isBlack(dest)) break;
+          deepCopyNode(n->moves + moveIndex,base);
+          n->moves[moveIndex].current->pieces[i(X,Y)] = ' ';
+          n->moves[moveIndex].current->pieces[i(X,j2)] = 'q';
+          n->moves[moveIndex].current->lastPawn = -1;
+          if(dest == ' ')
+            n->moves[moveIndex].current->drawCount++;
+          else {
+            n->moves[moveIndex].current->drawCount = 0;
+          }
+          moveIndex++;
+          (*n).moveCount++;
+          if(moveIndex == currentAlloc) {
+              currentAlloc += 100;
+              (*n).moves = (struct node *)realloc((void*)(*n).moves,currentAlloc*sizeof(struct node));
+              end += 100;
+          }
+          if(dest != ' ') break;
+        }
+        PRINTR("\n4L\n");
+        break;
+      case 'k':
+        for(j2=0; j2<8; j2++) {
+          PRINT2("\n1 j2 = %d\n",j2);
+          dest = getPiece(n->current,i(X+knightMovesX[j2],Y+knightMovesY[j2]));
+          if(dest == ' ' || isWhite(dest)) {
+            PRINT2("\n2\n");
+            deepCopyNode(n->moves + moveIndex,base);
+            n->moves[moveIndex].current->pieces[j] = ' ';
+            n->moves[moveIndex].current->pieces[i(X+knightMovesX[j2],Y+knightMovesY[j2])] = 'n';
+            n->moves[moveIndex].current->lastPawn = -1;
+            PRINT2("\n3\n");
+            if(dest == ' ') {
+              PRINT2("\n4a\n");
+              n->moves[moveIndex].current->drawCount++;
+            } else {
+              PRINT2("\n4b\n");
+              n->moves[moveIndex].current->drawCount = 0;
+            }
+            moveIndex++;
+            (*n).moveCount++;
+            PRINT2("\n5\n");
+            if(moveIndex == currentAlloc) {
+              currentAlloc += 100;
+              (*n).moves = (struct node *)realloc((void*)(*n).moves,currentAlloc*sizeof(struct node));
+              end += 100;
+            }
+            PRINT2("\n6\n");
+          }
+
+        }
+        break;
+  }
+  for(j=0; j<(*n).moveCount; j++) {
+    analysis((*n).moves+j);
+  }
+  qsort((void *)(*n).moves,(*n).moveCount,sizeof(struct node),comparator);
+}
+
 //Main
 
 int main() {
-  struct board *b = newBoard();
+  struct node *n = newNode();
+  struct node *temp;
   printf("\nEntering \"E\" will exit the game.\nOtherwise, enter a move as a coordinate pair (e.g. \"e2e4\").\nCastling is treated as a king move (e.g. short castleing for white will always be \"e1g1\"\nSpecific promotion will be prompted after a qualifying pawn move.\n\n");
-  printBoard(b);
-  while(humanMove(b)) {
-    printBoard(b);
+  printBoard((*n).current);
+  while(humanMove((*n).current)) {
+    printBoard((*n).current);
+    generateMoves(n);
+    n = (*n).moves;
+    printBoard((*n).current);
   }
-  printf("\nClean Exit\n");
+  printf("Clean exit");
   return 0;
 }
